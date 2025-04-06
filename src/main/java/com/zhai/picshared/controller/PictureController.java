@@ -22,10 +22,12 @@ import com.zhai.picshared.constant.UserConstant;
 import com.zhai.picshared.exception.BusinessException;
 import com.zhai.picshared.exception.ErrorCode;
 import com.zhai.picshared.exception.ThrowUtils;
+import com.zhai.picshared.manager.LocalPictureCache;
 import com.zhai.picshared.manager.auth.SpaceUserAuthManager;
 import com.zhai.picshared.manager.auth.SpaceUserPermissionConstant;
 import com.zhai.picshared.manager.auth.StpKit;
 import com.zhai.picshared.manager.auth.annotation.SaSpaceCheckPermission;
+import com.zhai.picshared.manager.redis.CacheManagerHelper;
 import com.zhai.picshared.model.dto.picture.*;
 import com.zhai.picshared.model.entity.Picture;
 import com.zhai.picshared.model.entity.Space;
@@ -72,12 +74,12 @@ public class PictureController {
 
     @Resource
     private SpaceService spaceService;
-    private final Cache<String, String> LOCAL_CACHE =
-            Caffeine.newBuilder().initialCapacity(1024)
-                    .maximumSize(10000L)
-                    // 缓存 5 分钟移除
-                    .expireAfterWrite(5L, TimeUnit.MINUTES)
-                    .build();
+
+
+    @Resource
+    private CacheManagerHelper cacheManagerHelper;
+//    @Resource
+//    private LocalPictureCache localPictureCache;
 
     /**
      * 删除图片
@@ -128,6 +130,7 @@ public class PictureController {
         pictureService.fillReviewParams(picture, loginUser, oldPicture.getSpaceId());
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        cacheManagerHelper.clearBySpace(oldPicture.getSpaceId());
         return ResultUtils.success(true);
     }
 
@@ -225,49 +228,41 @@ public class PictureController {
         long size = pictureQueryRequest.getPageSize();
         // 限制爬虫
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
-        // 普通用户默认只能查看已过审的数据
-        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+//        // 普通用户默认只能查看已过审的数据
+//        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
 
-        // 构建缓存 key
+        Long spaceId = pictureQueryRequest.getSpaceId();
+        if (spaceId == null) {
+            // 普通用户默认只能查看已过审的公开数据
+            pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+            pictureQueryRequest.setNullSpaceId(true);
+        }
+
+        // 构建缓存 key：加入空间维度
         String queryCondition = JSONUtil.toJsonStr(pictureQueryRequest);
         String hashKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
-        String cacheKey = "yupicture:listPictureVOByPage:" + hashKey;
+        String cacheKey = "yupicture:listPictureVOByPage:" + (spaceId == null ? "public" : spaceId) + ":" + hashKey;
 
-        // 1. 查询本地缓存（Caffeine）
-        String cachedValue = LOCAL_CACHE.getIfPresent(cacheKey);
+        // 1 & 2. 优先查询本地缓存 & Redis（Helper 封装了双查逻辑）
+        String cachedValue = cacheManagerHelper.get(cacheKey);
         if (cachedValue != null) {
             Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
             return ResultUtils.success(cachedPage);
         }
-
-        // 2. 查询分布式缓存（Redis）
-        ValueOperations<String, String> valueOps = stringRedisTemplate.opsForValue();
-        cachedValue = valueOps.get(cacheKey);
-        if (cachedValue != null) {
-            // 如果命中 Redis，存入本地缓存并返回
-            LOCAL_CACHE.put(cacheKey, cachedValue);
-            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
-            return ResultUtils.success(cachedPage);
-        }
-
 
         // 3. 查询数据库
         Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
                 pictureService.getQueryWrapper(pictureQueryRequest));
         Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage, request);
 
-        // 4. 更新缓存
+        // 4. 写入缓存（本地 + Redis + Set 记录）
         String cacheValue = JSONUtil.toJsonStr(pictureVOPage);
-        // 更新本地缓存
-        LOCAL_CACHE.put(cacheKey, cacheValue);
-        // 更新 Redis 缓存，设置过期时间为 5 分钟
-        int cacheExpireSeconds = RandomUtil.randomInt(300, 600);
-        valueOps.set(cacheKey, cacheValue, cacheExpireSeconds, TimeUnit.SECONDS);
-
+        cacheManagerHelper.put(cacheKey, cacheValue, spaceId);
 
         // 返回结果
         return ResultUtils.success(pictureVOPage);
     }
+
 
 
     /**
@@ -301,6 +296,8 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        System.out.println("操作edit");
+        cacheManagerHelper.clearBySpace(oldPicture.getSpaceId());
         return ResultUtils.success(true);
     }
 

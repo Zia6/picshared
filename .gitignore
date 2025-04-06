@@ -1,6 +1,6 @@
 #Custom
 application-local.yml
-
+application-*.yml
 HELP.md
 target/
 !.mvn/wrapper/maven-wrapper.jar

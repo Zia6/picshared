@@ -51,4 +51,9 @@ public class LoginUserVO implements Serializable {
      * 更新时间
      */
     private Date updateTime;
+
+    /**
+     * token
+     */
+    private String token;
 }
