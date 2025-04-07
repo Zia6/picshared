@@ -32,9 +32,11 @@ import com.zhai.picshared.model.dto.picture.*;
 import com.zhai.picshared.model.entity.Picture;
 import com.zhai.picshared.model.entity.Space;
 import com.zhai.picshared.model.entity.User;
+import com.zhai.picshared.model.enums.EventType;
 import com.zhai.picshared.model.enums.PictureReviewStatusEnum;
 import com.zhai.picshared.model.vo.picture.PictureTagCategory;
 import com.zhai.picshared.model.vo.picture.PictureVO;
+import com.zhai.picshared.service.MessageOutboxService;
 import com.zhai.picshared.service.PictureService;
 import com.zhai.picshared.service.SpaceService;
 import com.zhai.picshared.service.UserService;
@@ -81,6 +83,8 @@ public class PictureController {
 //    @Resource
 //    private LocalPictureCache localPictureCache;
 
+    @Resource
+    private MessageOutboxService messageOutboxService;
     /**
      * 删除图片
      */
@@ -102,6 +106,7 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.removeById(id);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        messageOutboxService.record(EventType.PICTURE_DELETE.getText(),oldPicture.getSpaceId(),null);
         return ResultUtils.success(true);
     }
 
@@ -130,7 +135,7 @@ public class PictureController {
         pictureService.fillReviewParams(picture, loginUser, oldPicture.getSpaceId());
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        cacheManagerHelper.clearBySpace(oldPicture.getSpaceId());
+        messageOutboxService.record(EventType.PICTURE_UPDATE.getText(),oldPicture.getSpaceId(),null);
         return ResultUtils.success(true);
     }
 
@@ -296,8 +301,9 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        System.out.println("操作edit");
-        cacheManagerHelper.clearBySpace(oldPicture.getSpaceId());
+//        System.out.println("操作edit");
+//        cacheManagerHelper.clearBySpace(oldPicture.getSpaceId());
+        messageOutboxService.record(EventType.PICTURE_EDIT.getText(),oldPicture.getSpaceId(),null);
         return ResultUtils.success(true);
     }
 
@@ -334,6 +340,7 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         String fileUrl = pictureUploadRequest.getFileUrl();
         PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest, loginUser);
+        messageOutboxService.record(EventType.PICTURE_INSERT.getText(),pictureVO.getSpaceId(),null);
         return ResultUtils.success(pictureVO);
     }
 
@@ -348,6 +355,7 @@ public class PictureController {
             HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
+        messageOutboxService.record(EventType.PICTURE_INSERT.getText(),pictureVO.getSpaceId(),null);
         return ResultUtils.success(pictureVO);
     }
 

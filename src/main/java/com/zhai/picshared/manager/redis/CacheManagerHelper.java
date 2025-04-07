@@ -37,6 +37,18 @@ public class CacheManagerHelper {
 
     @Resource
     private LocalPictureCache localPictureCache;
+
+    /**
+     * 判断消息是否已处理（幂等控制）
+     * @param messageId 消息唯一ID
+     * @return true = 第一次处理，false = 重复
+     */
+    public boolean tryProcessMessage(Long messageId) {
+        String key = "mq:idempotent:" + messageId;
+        Boolean first = stringRedisTemplate.opsForValue()
+                .setIfAbsent(key, "1", 10, TimeUnit.MINUTES);
+        return Boolean.TRUE.equals(first);
+    }
     /**
      * 获取缓存
      */
@@ -60,7 +72,7 @@ public class CacheManagerHelper {
         int ttl = 300 + (int) (Math.random() * 300);
         stringRedisTemplate.opsForValue().set(key, value, ttl, TimeUnit.SECONDS);
         stringRedisTemplate.opsForSet().add(REDIS_KEY_SET_PREFIX + spaceId, key);
-        System.out.println("放入了" + REDIS_KEY_SET_PREFIX + spaceId);
+//        System.out.println("放入了" + REDIS_KEY_SET_PREFIX + spaceId);
     }
 
     /**
@@ -73,7 +85,7 @@ public class CacheManagerHelper {
             stringRedisTemplate.delete(keys);
             stringRedisTemplate.delete(keySetKey);
 //            keys.forEach(k -> stringRedisTemplate.convertAndSend(PUBSUB_CHANNEL, k));
-            System.out.println("缓存清理");
+//            System.out.println("缓存清理");
 //            log.info("[缓存清理] 清除空间 {} 的缓存共 {} 条", spaceId, keys.size());
         }
     }

@@ -125,7 +125,11 @@
             <artifactId>disruptor</artifactId>
             <version>3.4.2</version>
         </dependency>
-
+        <!--            RabbitMq-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.qcloud</groupId>
             <artifactId>cos_api</artifactId>
@@ -148,6 +152,9 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+
+
 
         </dependencies>
 
